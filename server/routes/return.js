@@ -20,24 +20,27 @@ router.post('/return/:id', async (req, res) => {
 
         const borrowRecord = borrowRows[0];
 
-        // Start transaction
-        await db.execute('START TRANSACTION');
+        // Get a connection for transaction
+        const connection = await db.getConnection();
 
         try {
+            // Start transaction
+            await connection.beginTransaction();
+
             // Mark as returned
-            await db.execute(
+            await connection.execute(
                 'UPDATE borrowed_materials SET is_returned = TRUE, return_date = ? WHERE id = ?',
                 [return_date, borrowId]
             );
 
             // Update material stock (add back the quantity)
-            await db.execute(
+            await connection.execute(
                 'UPDATE materials SET quantity_available = quantity_available + ? WHERE id = ?',
                 [borrowRecord.quantity, borrowRecord.material_id]
             );
 
             // Commit transaction
-            await db.execute('COMMIT');
+            await connection.commit();
 
             res.json({
                 message: 'Item returned successfully',
@@ -46,8 +49,11 @@ router.post('/return/:id', async (req, res) => {
 
         } catch (error) {
             // Rollback transaction on error
-            await db.execute('ROLLBACK');
+            await connection.rollback();
             throw error;
+        } finally {
+            // Release connection back to pool
+            connection.release();
         }
 
     } catch (error) {

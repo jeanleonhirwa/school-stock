@@ -59,24 +59,27 @@ router.post('/borrow', async (req, res) => {
             });
         }
 
-        // Start transaction
-        await db.execute('START TRANSACTION');
-
+        // Get a connection for transaction
+        const connection = await db.getConnection();
+        
         try {
+            // Start transaction
+            await connection.beginTransaction();
+
             // Create borrow record
-            const [borrowResult] = await db.execute(
+            const [borrowResult] = await connection.execute(
                 'INSERT INTO borrowed_materials (student_id, material_id, quantity, borrow_date) VALUES (?, ?, ?, ?)',
                 [student_id, material_id, quantity, borrow_date]
             );
 
             // Update material stock
-            await db.execute(
+            await connection.execute(
                 'UPDATE materials SET quantity_available = quantity_available - ? WHERE id = ?',
                 [quantity, material_id]
             );
 
             // Commit transaction
-            await db.execute('COMMIT');
+            await connection.commit();
 
             res.status(201).json({
                 message: 'Borrow record created successfully',
@@ -86,8 +89,11 @@ router.post('/borrow', async (req, res) => {
 
         } catch (error) {
             // Rollback transaction on error
-            await db.execute('ROLLBACK');
+            await connection.rollback();
             throw error;
+        } finally {
+            // Release connection back to pool
+            connection.release();
         }
 
     } catch (error) {
